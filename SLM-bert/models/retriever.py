@@ -1,5 +1,3 @@
-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,7 +8,7 @@ from einops import rearrange
 import math
 import warnings
 from copy import deepcopy
-
+from models.config import LlamaCLConfig
 
 
 class Config(object):
@@ -46,7 +44,7 @@ def generate_orthogonal_matrix(rows, cols):
 
 
 class Retriever(nn.Module):
-    def __init__(self, config) -> None:
+    def __init__(self, config:LlamaCLConfig) -> None:
         super().__init__()
         self.config = config
         assert config.similarity_type in ['cosine', 'softmax'], "The similarity calculation should be ['cosine', softmax]"
@@ -65,11 +63,9 @@ class Retriever(nn.Module):
         if self.random_dropout is not None:
             assert self.random_dropout < 1 and self.random_dropout >=0, "random_dropout should be in [0, 1)"        
 
-        # self.tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/nli-roberta-base-v2')
-        # self.bert = AutoModel.from_pretrained('sentence-transformers/nli-roberta-base-v2')
-        self.tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/nli-mpnet-base-v2')
-        self.bert = AutoModel.from_pretrained('sentence-transformers/nli-mpnet-base-v2')
-
+        self.tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/nli-roberta-base-v2')
+        self.bert = AutoModel.from_pretrained('sentence-transformers/nli-roberta-base-v2')
+        
         for param in self.bert.parameters():
             param.requires_grad = False
         
@@ -95,18 +91,13 @@ class Retriever(nn.Module):
         if not config.pool_train_weights:
             self.freeze_weights()
 
-    # =============================================================================================
-    # For the retriever process, we follow and modify from:
-    # https://github.com/google-research/l2p [Learning to Prompt for Continual Learning (L2P)]
-    # Thanks for their open-work
-    # =============================================================================================
+    
     def forward(
             self, 
             inputs, 
             pool_mask=None,
             return_topk_index=False,
             use_distance_weight=True):
-        
         queries = self.encode(inputs)
         bsz = queries.shape[0]
         queries = rearrange(queries, "b (g c) -> b g c", g=self.groups)
@@ -140,10 +131,20 @@ class Retriever(nn.Module):
             dis_weihgt, idx_vote = idx_sim.topk(self.weight_topk, dim=-1) # [topk]
             dis_weihgt = dis_weihgt / (dis_weihgt.sum() + 1e-9)
 
-        weight_offset = torch.take_along_dim(self.weight_offset, idx_vote[:, None,None], dim=0)
+        idx_vote_expanded = idx_vote.unsqueeze(0).unsqueeze(-1).expand(self.weight_offset.shape[0], -1, -1)
+        print(idx_vote.shape)
+        print(self.weight_offset.shape)
+        # torch.take_along_dim 호출
+        weight_offset = torch.take_along_dim(self.weight_offset, idx_vote_expanded, dim=1)
 
-        low_rank_a = weight_offset[..., 0,:].view(self.weight_topk, self.num_hidden_layers, self.low_rank, self.hidden_size)
-        low_rank_b = weight_offset[..., 1,:].view(self.weight_topk, self.num_hidden_layers, self.low_rank, self.hidden_size)
+
+        print(f"Shape of weight_offset before reshape: {weight_offset[..., 0, :].shape}")
+        print(f"Weight_topk: {self.weight_topk}, Num_hidden_layers: {self.num_hidden_layers}, Low_rank: {self.low_rank}, Hidden_size: {self.hidden_size}")
+        expected_elements = self.weight_topk * self.num_hidden_layers * self.low_rank * self.hidden_size
+        print(f"Expected elements: {expected_elements:,}, Actual elements: {weight_offset[..., 0, :].numel():,}")
+
+        low_rank_a = weight_offset[:2, 0,:].view(self.weight_topk, self.num_hidden_layers, self.low_rank, self.hidden_size)
+        low_rank_b = weight_offset[:2, 1,:].view(self.weight_topk, self.num_hidden_layers, self.low_rank, self.hidden_size)
 
         weight_offset = torch.einsum("n l r x, n l r y -> n l x y", low_rank_a, low_rank_b)
         
@@ -159,6 +160,8 @@ class Retriever(nn.Module):
             sim = torch.take_along_dim(sim, idx, dim=-1)
             loss = -sim.mean()
             outputs['key_loss'] = loss
+            if self.last_keys is not None:
+                outputs['centrifugal_loss'] = torch.einsum("b g x c, b g y c -> b g x y", F.normalize(self.keys, dim=-1), F.normalize(self.last_keys, dim=-1)).mean()
 
         if return_topk_index:
             outputs['topk_index'] = idx
@@ -193,7 +196,7 @@ class Retriever(nn.Module):
     
     def freeze_weights(self):
         print("<=============== Freeze weights =============>")
-        self.weight_offset.requires_grad = False
+        self.vectordb.requires_grad = False
     
     def get_tokenizer(self):
         return self.tokenizer

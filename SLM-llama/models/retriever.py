@@ -128,8 +128,8 @@ class Retriever(nn.Module):
             idx_vote = torch.topk(bin_count, k=self.weight_topk)[1]  # [groups, topk]
         else:
             idx_sim = torch.mean(idx_sim, dim=[0,1])
-            dis_weihgt, idx_vote = idx_sim.topk(self.weight_topk, dim=-1) # [topk]
-            dis_weihgt = dis_weihgt / (dis_weihgt.sum() + 1e-9)
+            dis_weight, idx_vote = idx_sim.topk(self.weight_topk, dim=-1) # [topk]
+            dis_weight = dis_weight / (dis_weight.sum() + 1e-9)
 
         weight_offset = torch.take_along_dim(self.weight_offset, idx_vote[:, None,None], dim=1)
 
@@ -141,7 +141,7 @@ class Retriever(nn.Module):
         if not use_distance_weight:
             weight_offset = torch.mean(weight_offset, dim=0)
         else:
-            weight_offset = (dis_weihgt[:, None, None, None] * weight_offset).sum(0)
+            weight_offset = (dis_weight[:, None, None, None] * weight_offset).sum(0)
 
 
         outputs['weight_offset'] = weight_offset
