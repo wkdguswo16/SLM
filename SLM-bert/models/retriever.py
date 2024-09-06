@@ -128,20 +128,15 @@ class Retriever(nn.Module):
             idx_vote = torch.topk(bin_count, k=self.weight_topk)[1]  # [groups, topk]
         else:
             idx_sim = torch.mean(idx_sim, dim=[0,1])
-            dis_weihgt, idx_vote = idx_sim.topk(self.weight_topk, dim=-1) # [topk]
-            dis_weihgt = dis_weihgt / (dis_weihgt.sum() + 1e-9)
+            dis_weight, idx_vote = idx_sim.topk(self.weight_topk, dim=-1) # [topk]
+            dis_weight = dis_weight / (dis_weight.sum() + 1e-9)
+        
 
-        idx_vote_expanded = idx_vote.unsqueeze(0).unsqueeze(-1).expand(self.weight_offset.shape[0], -1, -1)
-        print(idx_vote.shape)
-        print(self.weight_offset.shape)
+        # idx_vote_expanded에 차원을 추가하지 않고, 필요한 차원만 맞춥니다
+        idx_vote_expanded = idx_vote.unsqueeze(0).expand(self.weight_offset.shape[0], self.weight_offset.shape[1])
+
         # torch.take_along_dim 호출
-        weight_offset = torch.take_along_dim(self.weight_offset, idx_vote_expanded, dim=1)
-
-
-        print(f"Shape of weight_offset before reshape: {weight_offset[..., 0, :].shape}")
-        print(f"Weight_topk: {self.weight_topk}, Num_hidden_layers: {self.num_hidden_layers}, Low_rank: {self.low_rank}, Hidden_size: {self.hidden_size}")
-        expected_elements = self.weight_topk * self.num_hidden_layers * self.low_rank * self.hidden_size
-        print(f"Expected elements: {expected_elements:,}, Actual elements: {weight_offset[..., 0, :].numel():,}")
+        weight_offset = torch.take_along_dim(self.weight_offset, idx_vote_expanded.unsqueeze(-1), dim=1)
 
         low_rank_a = weight_offset[:2, 0,:].view(self.weight_topk, self.num_hidden_layers, self.low_rank, self.hidden_size)
         low_rank_b = weight_offset[:2, 1,:].view(self.weight_topk, self.num_hidden_layers, self.low_rank, self.hidden_size)
@@ -151,7 +146,7 @@ class Retriever(nn.Module):
         if not use_distance_weight:
             weight_offset = torch.mean(weight_offset, dim=0)
         else:
-            weight_offset = (dis_weihgt[:, None, None, None] * weight_offset).sum(0)
+            weight_offset = (dis_weight[:, None, None, None] * weight_offset).sum(0)
 
 
         outputs['weight_offset'] = weight_offset
