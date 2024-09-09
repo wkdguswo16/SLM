@@ -263,8 +263,7 @@ class ScalableLM(PreTrainedModel):
                             warn_names.add(name)
             if len(warn_names) > 0:
                 logger.warning_once(
-                    f"Removed shared tensor {
-                        warn_names} while saving. This should be OK, but check by verifying that you don't receive any warning while reloading",
+                    f"Removed shared tensor {warn_names} while saving. This should be OK, but check by verifying that you don't receive any warning while reloading",
                 )
 
         # Shard the model if it is too big.
@@ -319,10 +318,8 @@ class ScalableLM(PreTrainedModel):
                 content = json.dumps(index, indent=2, sort_keys=True) + "\n"
                 f.write(content)
             logger.info(
-                f"The model is bigger than the maximum size per checkpoint ({
-                    max_shard_size}) and is going to be "
-                f"split in {len(
-                    shards)} checkpoint shards. You can find where each parameters has been saved in the "
+                f"The model is bigger than the maximum size per checkpoint ({max_shard_size}) and is going to be "
+                f"split in {len(shards)} checkpoint shards. You can find where each parameters has been saved in the "
                 f"index located at {save_index_file}."
             )
 
