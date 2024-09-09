@@ -5,6 +5,7 @@ import re
 from tqdm import tqdm
 import argparse
 
+
 def accuracy_score(label, predict):
     # Calculate accuracy for multiple-choices questions and classification
     # For generation model, we only select the first word to compare
@@ -21,7 +22,7 @@ def accuracy_score(label, predict):
 def score(result_path, task):
     with open(result_path) as f:
         results = json.load(f)
-    
+
     score_path = os.path.join(os.path.split(result_path)[0], "score.json")
     if os.path.exists(score_path):
         raise ValueError("There is already score file")
@@ -32,7 +33,7 @@ def score(result_path, task):
             label = result['label']
             output = result['output']
             score += accuracy_score(label, output)
-        score = score / len(results)    
+        score = score / len(results)
         score = dict(Accuracy=score)
     elif task in ['medical']:
         bertscore = load("bertscore")
@@ -41,13 +42,14 @@ def score(result_path, task):
         for result in results:
             labels.append(result['label'])
             outputs.append(result['output'])
-        score = bertscore.compute(predictions=outputs, references=labels, lang='en')
+        score = bertscore.compute(
+            predictions=outputs, references=labels, lang='en')
         for k in ['precision', 'recall', 'f1']:
             score["avg_{}".format(k)] = sum(score[k]) / len(results)
             score.pop(k)
     else:
         raise ValueError("No matched task")
-    
+
     with open(score_path, 'w') as f:
         json.dump(score, f, indent=2)
 

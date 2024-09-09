@@ -20,6 +20,7 @@ import argparse
 from evaluate import load
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+
 @dataclass
 class DataCollatorWithPadding:
 
@@ -27,9 +28,11 @@ class DataCollatorWithPadding:
     task: str = "finance"
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
-        batch = dict(raw_text=[feature.pop('raw_text') for feature in features])  # num_labels can not use
+        batch = dict(raw_text=[feature.pop('raw_text')
+                     for feature in features])  # num_labels can not use
         label_key = 'labels' if 'labels' in features else 'label'
-        input_ids, attention_mask, labels = tuple([torch.tensor(feature[key]) for feature in features] for key in ['input_ids', 'attention_mask', label_key])
+        input_ids, attention_mask, labels = tuple([torch.tensor(
+            feature[key]) for feature in features] for key in ['input_ids', 'attention_mask', label_key])
         input_ids = nn.utils.rnn.pad_sequence(
             input_ids, batch_first=True, padding_value=self.eos_token_id
         )
@@ -45,21 +48,23 @@ class DataCollatorWithPadding:
             "labels": labels,
         })
         return batch
-    
+
 
 def test_task(
-    task,
-    model, 
-    tokenizer,
-    batch_size=1, 
-    output_dir=None):
-    assert batch_size==1, "batch_size can only be 1"
+        task,
+        model,
+        tokenizer,
+        batch_size=1,
+        output_dir=None):
+    assert batch_size == 1, "batch_size can only be 1"
     dataset = get_dataset_by_name(task, tokenizer=tokenizer, split='test')
-    dataset.set_format(columns=['input_ids', 'attention_mask', 'label', 'raw_text'])
+    dataset.set_format(
+        columns=['input_ids', 'attention_mask', 'label', 'raw_text'])
     data_collator = DataCollatorWithPadding(
-                        eos_token_id=tokenizer.eos_token_id, 
-                        task=task)
-    data_loader = DataLoader(dataset=dataset, batch_size=batch_size, collate_fn=data_collator)
+        eos_token_id=tokenizer.eos_token_id,
+        task=task)
+    data_loader = DataLoader(
+        dataset=dataset, batch_size=batch_size, collate_fn=data_collator)
 
     model = model.cuda().eval()
     results = []
@@ -87,7 +92,8 @@ def test_task(
         if os.path.exists(path):
             print(" ====================== File has existed... =========================")
         else:
-            print(" ====================== Save task: {} results to: {} =========================".format(task, path))
+            print(" ====================== Save task: {} results to: {} =========================".format(
+                task, path))
             with open(path, "w") as f:
                 json.dump(results, f)
 
@@ -113,10 +119,8 @@ if __name__ == "__main__":
     config = LlamaCLConfig()
     model = ScalableLM(config)
     model.load_state_dict(torch.load(args.model_path), strict=False)
-    test_task(task=args.task, 
-            model=model, 
-            tokenizer=tokenizer,
-            batch_size=1,
-            output_dir=os.path.join(output_dir, args.task))
-    
-        
+    test_task(task=args.task,
+              model=model,
+              tokenizer=tokenizer,
+              batch_size=1,
+              output_dir=os.path.join(output_dir, args.task))

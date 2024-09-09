@@ -17,13 +17,13 @@ TASK_TO_DATANAME = {
 
 
 PROMPT_TEMPLATE = {
-'with_sys': """[INST] <<SYS>>
+    'with_sys': """[INST] <<SYS>>
 {instruction}
 <</SYS>>
 
 {input} [/INST] """,
 
-'without_sys': """[INST] {input} [/INST] """
+    'without_sys': """[INST] {input} [/INST] """
 }
 
 
@@ -44,22 +44,24 @@ def extract_from_finance(example):
         output=output
     )
 
+
 def extract_from_history(example):
     question = example['question']
     choices = example['choices']
     output = example['answer']
-    input="Question:{}\n Choices:{}\n".format(question, str(choices))
+    input = "Question:{}\n Choices:{}\n".format(question, str(choices))
     output = chr(ord('@')+int(output)+1)
     return dict(
         input=input,
         output=output
     )
 
+
 @dataclass
 class Preprocess:
     tokenizer: PreTrainedTokenizerBase
     max_length: int = 512
-    task:str = 'finance'
+    task: str = 'finance'
 
     def __call__(self, example) -> Any:
         if 'finance' in self.task:
@@ -67,9 +69,9 @@ class Preprocess:
         elif 'history' in self.task:
             example = extract_from_history(example)
         source = PROMPT_TEMPLATE['with_sys'].format_map(example) if 'instruction' in example.keys() else\
-                 PROMPT_TEMPLATE['without_sys'].format_map(example)
+            PROMPT_TEMPLATE['without_sys'].format_map(example)
         raw_text = example['instruction'] + " ### " + example['input'] if 'instruction' in example.keys() else \
-                   example['input']
+            example['input']
         target = example['output'] + "</s>"
         source = self.tokenizer(
             source,
@@ -80,7 +82,7 @@ class Preprocess:
             target,
             max_length=self.max_length,
             truncation=True,
-            add_special_tokens =False,
+            add_special_tokens=False,
         )
         source_length = len(source['input_ids'])
         input_ids = source['input_ids'] + target['input_ids']
@@ -94,12 +96,12 @@ class Preprocess:
             raw_text=raw_text
         )
 
-        
+
 @dataclass
 class PreprocessTest:
     tokenizer: PreTrainedTokenizerBase
     max_length: int = 512
-    task:str = 'finance'
+    task: str = 'finance'
 
     def __call__(self, example) -> Any:
         if 'finance' in self.task:
@@ -107,9 +109,9 @@ class PreprocessTest:
         elif 'history' in self.task:
             example = extract_from_history(example)
         source = PROMPT_TEMPLATE['with_sys'].format_map(example) if 'instruction' in example.keys() else\
-                 PROMPT_TEMPLATE['without_sys'].format_map(example)
+            PROMPT_TEMPLATE['without_sys'].format_map(example)
         raw_text = example['instruction'] + " ### " + example['input'] if 'instruction' in example.keys() else \
-                   example['input']
+            example['input']
         target = example['output'] + "</s>"
         source = self.tokenizer(
             source,
@@ -120,7 +122,7 @@ class PreprocessTest:
             target,
             max_length=self.max_length,
             truncation=True,
-            add_special_tokens =False,
+            add_special_tokens=False,
         )
         input_ids = source['input_ids']
         attention_mask = source['attention_mask']
@@ -131,27 +133,29 @@ class PreprocessTest:
             label=label,
             raw_text=raw_text
         )
-    
-
-
 
 
 def get_dataset_by_name(task, tokenizer, num_proc=4, split='train'):
     # ===================== LOAD DATA ==========================
     if "history" in task:
-        dataset = load_dataset("Stevross/mmlu", "high_school_european_history", split="auxiliary_train")
+        dataset = load_dataset(
+            "Stevross/mmlu", "high_school_european_history", split="auxiliary_train")
     else:
         data_name = TASK_TO_DATANAME[task]
         dataset = load_dataset(data_name, split="train")
-    
+
     # ===================== SELECT TRAIN INDEX ============================
     if os.path.exists("dataset/index/{}/{}.npy".format(split, task)):
-        print("============================= LOAD {} DATA LIST ====================================".format(split.upper()))
-        dataset = dataset.select(np.load("dataset/index/{}/{}.npy".format(split, task)))
+        print("============================= LOAD {} DATA LIST ====================================".format(
+            split.upper()))
+        dataset = dataset.select(
+            np.load("dataset/index/{}/{}.npy".format(split, task)))
 
     # ===================== GENERATE RAW TEXT =============================
     if split == 'train':
-        dataset = dataset.map(Preprocess(tokenizer=tokenizer, task=task), batched=False, num_proc=num_proc)
+        dataset = dataset.map(Preprocess(
+            tokenizer=tokenizer, task=task), batched=False, num_proc=num_proc)
     else:
-        dataset = dataset.map(PreprocessTest(tokenizer=tokenizer, task=task), batched=False, num_proc=num_proc)
+        dataset = dataset.map(PreprocessTest(
+            tokenizer=tokenizer, task=task), batched=False, num_proc=num_proc)
     return dataset
