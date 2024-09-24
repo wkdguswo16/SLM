@@ -40,13 +40,13 @@ class ScalableLM(PreTrainedModel):
     _keys_to_ignore_on_load_missing = ['model', 'retriever.bert']
     _keys_to_ignore_on_load_unexpected = ['src_weight_offset']
 
-    def __init__(self, config) -> None:
+    def __init__(self, config, quantization_config) -> None:
         super().__init__(config)
         self.config = config
         self.task_list = config.task_pool_index_range.keys()
 
         self.model = LlamaForCausalLM.from_pretrained(
-            config.model_name, torch_dtype=torch.bfloat16)
+            config.model_name, quantization_config=quantization_config)
         for name, param in self.model.named_parameters():
             param.requires_grad = False
 

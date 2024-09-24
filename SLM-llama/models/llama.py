@@ -410,18 +410,41 @@ class LlamaAttention(nn.Module):
                 attn_output = self.o_proj(attn_output)
         else:
             weight_offset = weight_offset.to(hidden_states)
+            # Assuming weight_offset is smaller or needs to be broadcasted to match o_proj.weight's dimensions
+
+            # Step 2: Now perform the linear transformation with the adjusted weight_offset
             if self.pretraining_tp > 1:
+                # When tensor parallelism is used, split and apply separately
                 attn_output = attn_output.split(
                     self.hidden_size // self.pretraining_tp, dim=2)
                 o_proj_slices = self.o_proj.weight.split(
                     self.hidden_size // self.pretraining_tp, dim=1)
                 weight_offset_slices = weight_offset.split(
                     self.hidden_size // self.pretraining_tp, dim=1)
-                attn_output = sum([F.linear(attn_output[i], o_proj_slices[i] +
-                                  weight_offset_slices[i]) for i in range(self.pretraining_tp)])
+
+                # Perform the linear operation for each slice
+                attn_output = sum([F.linear(attn_output[i], o_proj_slices[i] + weight_offset_slices[i])
+                                   for i in range(self.pretraining_tp)])
             else:
-                attn_output = F.linear(
-                    attn_output, self.o_proj.weight + weight_offset)
+                weight_output_expanded = self.o_proj.weight.repeat(
+                    2, 1).view(4096, -1)  # 첫 번째 차원을 두 배로 늘림
+
+                # Step 2: Combine with weight_offset_reduced
+                weight_output = (weight_output_expanded + weight_offset)
+                # Step 1: Reshape attn_output to 2D
+                # attn_output shape is [1, 514, 4096]
+                batch_size, seq_len, hidden_size = attn_output.size()
+                # Flatten to [batch_size * seq_len, hidden_size]
+                attn_output_2d = attn_output.view(-1, hidden_size)
+
+                # Step 2: Apply F.linear
+                print(attn_output)
+                attn_output_transformed = F.linear(
+                    attn_output_2d, weight_output)  # weight_output is [2048, 4096]
+
+                # Step 3: Reshape back to 3D
+                attn_output = attn_output_transformed.view(
+                    batch_size, seq_len, -1)  # Reshape to [1, 514, 2048]
 
         if not output_attentions:
             attn_weights = None

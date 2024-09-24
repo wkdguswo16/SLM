@@ -8,7 +8,7 @@ from einops import rearrange
 import math
 import warnings
 from copy import deepcopy
-from models.config import LlamaCLConfig
+from .config import MultiHeadConfig
 
 
 class Config(object):
@@ -44,7 +44,7 @@ def generate_orthogonal_matrix(rows, cols):
 
 
 class Retriever(nn.Module):
-    def __init__(self, config:LlamaCLConfig) -> None:
+    def __init__(self, config:MultiHeadConfig) -> None:
         super().__init__()
         self.config = config
         assert config.similarity_type in ['cosine', 'softmax'], "The similarity calculation should be ['cosine', softmax]"

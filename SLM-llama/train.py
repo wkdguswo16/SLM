@@ -1,7 +1,9 @@
+# %%
 from transformers import AutoTokenizer
 from transformers import PreTrainedTokenizerBase
 import numpy as np
 from transformers import TrainingArguments, Trainer
+from tqdm.notebook import tqdm, trange
 from models.config import LlamaCLConfig
 from transformers.modeling_utils import PreTrainedModel, unwrap_model
 from models.slm import ScalableLM
@@ -14,9 +16,10 @@ from datasets.utils.logging import disable_progress_bar
 import os
 import re
 import argparse
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-
+# %%
 @dataclass
 class DataCollatorWithPadding:
 
@@ -25,7 +28,6 @@ class DataCollatorWithPadding:
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
         batch = dict(task=self.task,
-                     # num_labels can not use
                      raw_text=[feature.pop('raw_text') for feature in features])
         label_key = 'labels' if 'labels' in features else 'label'
         input_ids, attention_mask, labels = tuple([torch.tensor(
@@ -46,7 +48,7 @@ class DataCollatorWithPadding:
         })
         return batch
 
-
+# %%
 def train_task(
         task,
         model,
@@ -98,7 +100,7 @@ def train_task(
 
     trainer.train()
 
-
+# %%
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -130,8 +132,6 @@ if __name__ == "__main__":
 
     tokenizer = AutoTokenizer.from_pretrained(config.model_name)
 
-    # if config.disable_task_id:
-    #     model.update_task(args.task)
     train_task(task=args.task,
                model=model,
                tokenizer=tokenizer,
