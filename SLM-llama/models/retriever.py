@@ -134,6 +134,7 @@ class Retriever(nn.Module):
         if not use_distance_weight:
             # [bsz, group, topk]
             _, idx = idx_sim.topk(self.weight_topk, dim=-1)
+            idx = torch.clamp(idx, 0, self.pool_size - 1)  # 인덱스 범위 초과 방지
             idx_vote = rearrange(idx, "b g k -> g (b k)")
             base = (torch.arange(0, self.groups, device=idx_vote.device)
                     * self.pool_size).view(-1, 1)
@@ -146,19 +147,16 @@ class Retriever(nn.Module):
             idx_sim = torch.mean(idx_sim, dim=[0, 1])
             dis_weight, idx_vote = idx_sim.topk(
                 self.weight_topk, dim=-1)  # [topk]
+            idx_vote = torch.clamp(idx_vote, 0, self.pool_size - 1)
             dis_weight = dis_weight / (dis_weight.sum() + 1e-9)
+        weight_offset = self.weight_offset[idx_vote, ...]
 
-        weight_offset = torch.take_along_dim(
-            self.weight_offset, idx_vote[None, :, None], dim=1)
-
-        low_rank_a = weight_offset[:2, 0, :].view(
+        low_rank_a = weight_offset[..., 0, :].view(
             self.weight_topk, self.num_hidden_layers, self.low_rank, self.hidden_size)
-        low_rank_b = weight_offset[:2, 1, :].view(
+        low_rank_b = weight_offset[..., 1, :].view(
             self.weight_topk, self.num_hidden_layers, self.low_rank, self.hidden_size)
-
         weight_offset = torch.einsum(
             "n l r x, n l r y -> n l x y", low_rank_a, low_rank_b)
-
         if not use_distance_weight:
             weight_offset = torch.mean(weight_offset, dim=0)
         else:

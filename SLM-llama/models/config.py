@@ -6,7 +6,7 @@ class LlamaCLConfig(LlamaConfig):
         super().__init__(vocab_size, hidden_size, intermediate_size, num_hidden_layers, num_attention_heads, num_key_value_heads, hidden_act, max_position_embeddings,
                          initializer_range, rms_norm_eps, use_cache, pad_token_id, bos_token_id, eos_token_id, pretraining_tp, tie_word_embeddings, rope_scaling, **kwargs)
 
-        self.model_name = 'meta-llama/Llama-2-7b-chat-hf'
+        self.model_name = 'meta-llama/Llama-3.2-1B'
         # "/data/bhpeng/SLM-llama/vectordb/output/model_6_6_medical.pth"
         self.retriever_state_dict = None
         self.disable_task_id = False

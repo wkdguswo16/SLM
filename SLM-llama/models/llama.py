@@ -187,6 +187,37 @@ class LlamaDynamicNTKScalingRotaryEmbedding(LlamaRotaryEmbedding):
                              None, None, :, :].to(dtype), persistent=False)
 
 
+class Llama3ScalingRotaryEmbedding(LlamaRotaryEmbedding):
+    """LlamaRotaryEmbedding extended with Llama3 scaling."""
+
+    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None, scaling_factor=1.0):
+        self.scaling_factor = scaling_factor
+        super().__init__(dim, max_position_embeddings, base, device)
+
+    def _set_cos_sin_cache(self, seq_len, device, dtype):
+        self.max_seq_len_cached = seq_len
+
+        # Llama3 specific scaling: Example uses an exponential scaling factor
+        if seq_len > self.max_position_embeddings:
+            # Exponential scaling based on the seq_len and scaling_factor
+            base = self.base * torch.exp(self.scaling_factor * (
+                seq_len - self.max_position_embeddings) / self.max_position_embeddings)
+            inv_freq = 1.0 / \
+                (base ** (torch.arange(0, self.dim, 2).float().to(device) / self.dim))
+            self.register_buffer("inv_freq", inv_freq)
+
+        t = torch.arange(self.max_seq_len_cached,
+                         device=device, dtype=self.inv_freq.dtype)
+
+        freqs = torch.einsum("i,j->ij", t, self.inv_freq)
+        # Different from paper, but it uses a different permutation in order to obtain the same calculation
+        emb = torch.cat((freqs, freqs), dim=-1)
+        self.register_buffer("cos_cached", emb.cos()[
+                             None, None, :, :].to(dtype), persistent=False)
+        self.register_buffer("sin_cached", emb.sin()[
+                             None, None, :, :].to(dtype), persistent=False)
+
+
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
@@ -300,6 +331,10 @@ class LlamaAttention(nn.Module):
                 self.rotary_emb = LlamaDynamicNTKScalingRotaryEmbedding(
                     self.head_dim, max_position_embeddings=self.max_position_embeddings, scaling_factor=scaling_factor
                 )
+            elif scaling_type == "llama3":
+                self.rotary_emb = Llama3ScalingRotaryEmbedding(
+                    self.head_dim, max_position_embeddings=self.max_position_embeddings, scaling_factor=scaling_factor
+                )
             else:
                 raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
 
@@ -319,23 +354,18 @@ class LlamaAttention(nn.Module):
         bsz, q_len, _ = hidden_states.size()
 
         if self.pretraining_tp > 1:
-            key_value_slicing = (self.num_key_value_heads *
-                                 self.head_dim) // self.pretraining_tp
-            query_slices = self.q_proj.weight.split(
-                (self.num_heads * self.head_dim) // self.pretraining_tp, dim=0)
+            key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.pretraining_tp
+            query_slices = self.q_proj.weight.split((self.num_heads * self.head_dim) // self.pretraining_tp, dim=0)
             key_slices = self.k_proj.weight.split(key_value_slicing, dim=0)
             value_slices = self.v_proj.weight.split(key_value_slicing, dim=0)
 
-            query_states = [F.linear(hidden_states, query_slices[i])
-                            for i in range(self.pretraining_tp)]
+            query_states = [F.linear(hidden_states, query_slices[i]) for i in range(self.pretraining_tp)]
             query_states = torch.cat(query_states, dim=-1)
 
-            key_states = [F.linear(hidden_states, key_slices[i])
-                          for i in range(self.pretraining_tp)]
+            key_states = [F.linear(hidden_states, key_slices[i]) for i in range(self.pretraining_tp)]
             key_states = torch.cat(key_states, dim=-1)
 
-            value_states = [F.linear(hidden_states, value_slices[i])
-                            for i in range(self.pretraining_tp)]
+            value_states = [F.linear(hidden_states, value_slices[i]) for i in range(self.pretraining_tp)]
             value_states = torch.cat(value_states, dim=-1)
 
         else:
@@ -343,19 +373,15 @@ class LlamaAttention(nn.Module):
             key_states = self.k_proj(hidden_states)
             value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.view(
-            bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(
-            bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        value_states = value_states.view(
-            bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
             kv_seq_len += past_key_value[0].shape[-2]
         cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
-        query_states, key_states = apply_rotary_pos_emb(
-            query_states, key_states, cos, sin, position_ids)
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
         if past_key_value is not None:
             # reuse k, v, self_attention
@@ -368,8 +394,7 @@ class LlamaAttention(nn.Module):
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
-        attn_weights = torch.matmul(
-            query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+        attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
 
         if attn_weights.size() != (bsz, self.num_heads, q_len, kv_seq_len):
             raise ValueError(
@@ -385,8 +410,7 @@ class LlamaAttention(nn.Module):
             attn_weights = attn_weights + attention_mask
 
         # upcast attention to fp32
-        attn_weights = nn.functional.softmax(
-            attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_output = torch.matmul(attn_weights, value_states)
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
@@ -400,56 +424,26 @@ class LlamaAttention(nn.Module):
 
         if weight_offset is None:
             if self.pretraining_tp > 1:
-                attn_output = attn_output.split(
-                    self.hidden_size // self.pretraining_tp, dim=2)
-                o_proj_slices = self.o_proj.weight.split(
-                    self.hidden_size // self.pretraining_tp, dim=1)
-                attn_output = sum([F.linear(attn_output[i], o_proj_slices[i])
-                                  for i in range(self.pretraining_tp)])
+                attn_output = attn_output.split(self.hidden_size // self.pretraining_tp, dim=2)
+                o_proj_slices = self.o_proj.weight.split(self.hidden_size // self.pretraining_tp, dim=1)
+                attn_output = sum([F.linear(attn_output[i], o_proj_slices[i]) for i in range(self.pretraining_tp)])
             else:
                 attn_output = self.o_proj(attn_output)
         else:
             weight_offset = weight_offset.to(hidden_states)
-            # Assuming weight_offset is smaller or needs to be broadcasted to match o_proj.weight's dimensions
-
-            # Step 2: Now perform the linear transformation with the adjusted weight_offset
             if self.pretraining_tp > 1:
-                # When tensor parallelism is used, split and apply separately
-                attn_output = attn_output.split(
-                    self.hidden_size // self.pretraining_tp, dim=2)
-                o_proj_slices = self.o_proj.weight.split(
-                    self.hidden_size // self.pretraining_tp, dim=1)
-                weight_offset_slices = weight_offset.split(
-                    self.hidden_size // self.pretraining_tp, dim=1)
-
-                # Perform the linear operation for each slice
-                attn_output = sum([F.linear(attn_output[i], o_proj_slices[i] + weight_offset_slices[i])
-                                   for i in range(self.pretraining_tp)])
+                attn_output = attn_output.split(self.hidden_size // self.pretraining_tp, dim=2)
+                o_proj_slices = self.o_proj.weight.split(self.hidden_size // self.pretraining_tp, dim=1)
+                weight_offset_slices = weight_offset.split(self.hidden_size // self.pretraining_tp, dim=1)
+                attn_output = sum([F.linear(attn_output[i], o_proj_slices[i] + weight_offset_slices[i]) for i in range(self.pretraining_tp)])
             else:
-                weight_output_expanded = self.o_proj.weight.repeat(
-                    2, 1).view(4096, -1)  # 첫 번째 차원을 두 배로 늘림
-
-                # Step 2: Combine with weight_offset_reduced
-                weight_output = (weight_output_expanded + weight_offset)
-                # Step 1: Reshape attn_output to 2D
-                # attn_output shape is [1, 514, 4096]
-                batch_size, seq_len, hidden_size = attn_output.size()
-                # Flatten to [batch_size * seq_len, hidden_size]
-                attn_output_2d = attn_output.view(-1, hidden_size)
-
-                # Step 2: Apply F.linear
-                print(attn_output)
-                attn_output_transformed = F.linear(
-                    attn_output_2d, weight_output)  # weight_output is [2048, 4096]
-
-                # Step 3: Reshape back to 3D
-                attn_output = attn_output_transformed.view(
-                    batch_size, seq_len, -1)  # Reshape to [1, 514, 2048]
+                attn_output = F.linear(attn_output, self.o_proj.weight + weight_offset)
 
         if not output_attentions:
             attn_weights = None
 
         return attn_output, attn_weights, past_key_value
+
 
 
 class LlamaDecoderLayer(nn.Module):

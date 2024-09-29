@@ -52,7 +52,7 @@ def load_datasets_to_raw_text(task,
                     benchmark=None,
                     split='train',
                     k_index=None):
-    df = pd.read_csv('data/src/data/'+task+'/'+split+'.csv', header=None)
+    df = pd.read_csv('../../SLM/data/src/data/'+task+'/'+split+'.csv', header=None)
     df = df.rename(columns={0: "label", 1: "title", 2: "content"})
     df['label'] = df['label'] - 1
     dataset = datasets.Dataset.from_pandas(df)

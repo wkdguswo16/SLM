@@ -19,9 +19,9 @@ datas_path = [
     "dbpedia"
 ]
 tokenizer_path = 'sentence-transformers/nli-roberta-base-v2'
-config_path = '/dataset/zhuotaotian/bhpeng/vectordb/output/config_6*20_all.json'
-model_path = "/dataset/zhuotaotian/bhpeng/vectordb/output/model_6*20_all.pth"
-save_path = "/dataset/zhuotaotian/bhpeng/vectordb/output/record.json"
+config_path = './vectordb/config_6*20_all.json'
+model_path = "./vectordb/dataset/model_6*20_all.pth"
+save_path = "./vectordb/record.json"
 batch_size = 64
 
 print("================ LOAD MODEL ===========")

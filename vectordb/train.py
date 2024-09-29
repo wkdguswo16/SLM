@@ -10,7 +10,7 @@ from dataset.dataset import RetriverDataset, DataCollatorForSupervisedDataset
 import os
 from models.utils import load_config
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 
 
@@ -84,16 +84,16 @@ def train(rank, args):
 
 if __name__  == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-g', '--gpus', default=2, type=int)
+    parser.add_argument('-g', '--gpus', default=1, type=int)
     parser.add_argument('--epochs', default=3, type=int, metavar='N')
     parser.add_argument('--lr_step_size', default=1, type=int)
     parser.add_argument('--log_interval', default=50, type=int)
     parser.add_argument('--lr', default=1e-3, type=float)
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--num_workers', default=4, type=int)
-    parser.add_argument('--save_path', default="/newdata/bohaopeng/research/llm/vectordb/output/CL/model_6*8_ag_news.pth", type=str)
+    parser.add_argument('--save_path', default="./output/CL/model_6*8_ag_news.pth", type=str)
     parser.add_argument('--checkpoint', default=None, type=str)
-    parser.add_argument('--config_path', default="/newdata/bohaopeng/research/llm/vectordb/output/incremental/config_6*8_ag_news.json", type=str)
+    parser.add_argument('--config_path', default="../SLM/config.json", type=str)
     parser.add_argument('--data_paths', default="ag_news", type=str)
     parser.add_argument('--master_port', default="8889", type=str)
 
